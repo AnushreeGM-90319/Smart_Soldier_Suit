@@ -1,0 +1,58 @@
+/* 
+   MODULE: BASE STATION (RECEIVER)
+   HARDWARE: ESP32, 16x2 LCD, LED
+*/
+#include <esp_now.h>
+#include <WiFi.h>
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
+#include "BluetoothSerial.h"
+
+BluetoothSerial SerialBT;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+const int ledPin = 26; 
+
+typedef struct struct_message {
+  int id; float temp; int distance; bool panic;
+  double lat; double lng; int bpm; int oxygen; bool moving;
+} struct_message;
+
+struct_message myData;
+unsigned long lastScreenSwitch = 0;
+int screenState = 0;
+
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  memcpy(&myData, incomingData, sizeof(myData));
+  
+  if (SerialBT.hasClient()) {
+    SerialBT.printf("%d,%d,%.2f,%d,%.6f,%.6f\n", 
+      myData.bpm, myData.oxygen, myData.temp, myData.distance, myData.lat, myData.lng);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(ledPin, OUTPUT);
+  lcd.init(); lcd.backlight();
+  SerialBT.begin("SOLDIER_BASE"); 
+  
+  WiFi.mode(WIFI_STA);
+  if (esp_now_init() != ESP_OK) return;
+  esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
+}
+
+void loop() {
+  bool alarm = false;
+  if (myData.panic || myData.oxygen < 85 || (myData.moving && myData.distance < 200)) {
+    alarm = true;
+  }
+
+  if (alarm) {
+    digitalWrite(ledPin, HIGH); delay(100);
+    digitalWrite(ledPin, LOW); delay(100);
+    lcd.setCursor(0,0); lcd.print("!!! ALERT !!!   ");
+  } else {
+    digitalWrite(ledPin, LOW);
+    // LCD Screen Cycling Logic (Omitted for brevity)
+  }
+}
